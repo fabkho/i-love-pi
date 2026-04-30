@@ -1,0 +1,20 @@
+anny-full:
+  - anny-scout
+  - anny-planner
+  - anny-worker
+  - anny-reviewer
+
+anny-plan:
+  - anny-scout
+  - anny-planner
+  - anny-plan-reviewer
+
+anny-ship:
+  - anny-plan-reviewer
+  - anny-reviewer
+  - anny-red-team
+
+anny-safe:
+  - anny-oracle
+  - anny-red-team
+  - anny-reviewer

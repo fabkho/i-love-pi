@@ -1,0 +1,19 @@
+{
+  "name": "pi-personal",
+  "version": "0.1.0",
+  "description": "Personal pi setup — extensions, anny.co agents, skills and prompts",
+  "private": true,
+  "dependencies": {
+    "yaml": "^2.8.0"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/tool-counter.ts",
+      "./extensions/subagent-widget.ts",
+      "./extensions/damage-control.ts"
+    ],
+    "agents": ["./agents"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"]
+  }
+}
