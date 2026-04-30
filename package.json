@@ -8,8 +8,7 @@
   },
   "pi": {
     "extensions": [
-      "./extensions/tool-counter.ts",
-      "./extensions/damage-control.ts"
+      "./extensions/tool-counter.ts"
     ],
     "agents": ["./agents"],
     "skills": ["./skills"],
