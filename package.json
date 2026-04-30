@@ -9,7 +9,6 @@
   "pi": {
     "extensions": [
       "./extensions/tool-counter.ts",
-      "./extensions/subagent-widget.ts",
       "./extensions/damage-control.ts"
     ],
     "agents": ["./agents"],
