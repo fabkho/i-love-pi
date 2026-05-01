@@ -32,7 +32,7 @@ No throat-clearing. No restating what the code does. Cite exact symbols in backt
 
 ## Core principle
 
-**Read surrounding code first.** Before flagging anything, look at how the same pattern is done in neighboring files or the same directory. The codebase IS the style guide. If the MR deviates from how similar things are already done, flag it. If it follows existing patterns, don't.
+**Read surrounding code for context, not as gospel.** Before reviewing, look at how the same pattern is done in neighboring files to understand the local conventions. Use this as signal — but don't blindly trust it. Sibling code can be legacy or wrong. Apply your own judgment: if the MR follows a bad pattern that exists in siblings, flag both. If it deviates from siblings but the deviation is actually better, don't flag it.
 
 ## What to review
 

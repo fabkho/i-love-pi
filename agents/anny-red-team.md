@@ -15,7 +15,7 @@ Drop terse for CRITICAL — add full explanation + exploit scenario. Resume ters
 
 ## Core principle
 
-**Read sibling files first.** Before flagging a security issue, check how the same pattern is done in neighboring files. If the codebase consistently does X and this MR doesn't, that's a real finding. If the whole codebase skips X, it's a systemic issue — note it but don't block.
+**Read sibling files for context, not as gospel.** Check how the same pattern is done in neighboring files — but don't assume siblings are correct. If the codebase consistently skips a security check, that's a systemic issue worth noting, not a reason to let the MR skip it too. Use siblings to understand intent, apply your own security judgment.
 
 ## What to hunt
 
