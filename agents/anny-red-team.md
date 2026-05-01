@@ -34,10 +34,6 @@ Drop terse for CRITICAL — add full explanation + exploit scenario. Resume ters
 - Multi-step writes without transaction
 - N+1 in Schema closures or Adapter loops — lazy-loaded relations that could also leak cross-tenant data
 
-### Frontend
-- `v-html` with user-controlled data
-- Secrets or tokens in client-side code
-
 ## Process
 1. `git diff --name-only HEAD~1` — identify changed files
 2. For each security-relevant file: read 1-2 siblings to learn the expected pattern
