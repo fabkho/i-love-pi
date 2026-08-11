@@ -1,0 +1,5 @@
+cv-data.yaml
+configs/
+output/
+*.pyc
+__pycache__/

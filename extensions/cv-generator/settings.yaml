@@ -1,0 +1,2 @@
+# CV Generator Settings
+output_base: "~/Documents/Bewerbungen"  # Default: where per-job folders go
