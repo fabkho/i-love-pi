@@ -167,4 +167,11 @@ Or use write_file tool to create it, then call generate_cv again.`,
       // Extension loaded silently — tools available
     }
   });
+
+  pi.on("resources_discover", async (_event, _ctx) => {
+    const skillPath = join(BASE, "SKILL.md");
+    if (existsSync(skillPath)) {
+      return { skillPaths: [skillPath] };
+    }
+  });
 }
