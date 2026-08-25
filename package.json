@@ -1,7 +1,7 @@
 {
   "name": "i-love-pi",
   "version": "0.1.0",
-  "description": "Personal pi setup — non-anny extensions and themes",
+  "description": "Personal pi setup — non-anny extensions",
   "private": true,
   "dependencies": {
     "yaml": "^2.8.0"
@@ -9,7 +9,6 @@
   "pi": {
     "extensions": [
       "./extensions/fork-tab.ts"
-    ],
-    "themes": ["./themes"]
+    ]
   }
 }

@@ -1,6 +1,6 @@
 # i-love-pi
 
-Personal pi setup — non-anny extensions and themes.
+Personal pi setup — non-anny extensions.
 
 ## Quick Start
 
@@ -26,12 +26,6 @@ Run `pi` → `/reload`.
 |-----------|-------------|
 | `cv-generator` | YAML-driven CV PDF generator with Jinja2 themes. Auto-discovers its own skill. |
 | `fork-tab` | Fork session into new tab with a keybinding |
-
-### Themes
-
-| Theme | Description |
-|-------|-------------|
-| `tokyo-night` | Tokyo Night color scheme for pi TUI |
 
 ## CV Generator Usage
 
