@@ -1,6 +1,6 @@
 # i-love-pi
 
-Personal pi setup — extensions, themes, agents, and prompts for anny.co development.
+Personal pi setup — non-anny extensions and themes.
 
 ## Quick Start
 
@@ -32,26 +32,6 @@ Run `pi` → `/reload`.
 | Theme | Description |
 |-------|-------------|
 | `tokyo-night` | Tokyo Night color scheme for pi TUI |
-
-### Agents
-
-| Agent | Description |
-|-----------|-------------|
-| `anny-oracle` | React patterns and conventions expert for anny codebase |
-| `anny-plan-reviewer` | Reviews architecture plans for the anny platform |
-| `anny-planner` | Creates implementation plans for anny features |
-| `anny-scout` | Fast codebase exploration for anny repos |
-| `anny-worker` | Implementation agent for anny tasks |
-| `bugfix-scout` | Specialized bug-hunting exploration agent |
-| `teams.yaml` | Team agent definitions |
-
-### Prompts
-
-| Prompt | Description |
-|--------|-------------|
-| `anny-feature` | Feature development prompt template |
-| `anny-review` | Code review prompt template |
-| `review-mr` | MR/PR review prompt template |
 
 ## CV Generator Usage
 
