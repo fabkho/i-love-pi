@@ -24,13 +24,4 @@ Run `pi` → `/reload`.
 
 | Extension | Description |
 |-----------|-------------|
-| `cv-generator` | YAML-driven CV PDF generator with Jinja2 themes. Auto-discovers its own skill. |
 | `fork-tab` | Fork session into new tab with a keybinding |
-
-## CV Generator Usage
-
-1. Create `~/.pi/agent/extensions/cv-generator/cv-data.yaml` with your CV data
-2. Create per-job configs in `configs/jobname.yaml`
-3. `pi` → AI can call `generate_cv --job jobname` or `list_cv_configs`
-
-See `extensions/cv-generator/README.md` for full docs.
