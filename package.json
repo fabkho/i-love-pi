@@ -9,7 +9,8 @@
   "pi": {
     "extensions": [
       "./extensions/fork-tab.ts",
-      "./extensions/inline-skills.ts"
+      "./extensions/inline-skills.ts",
+      "./extensions/tab-title.ts"
     ]
   }
 }
