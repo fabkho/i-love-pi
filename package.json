@@ -1,7 +1,7 @@
 {
   "name": "i-love-pi",
   "version": "0.1.0",
-  "description": "Personal pi setup — non-anny extensions",
+  "description": "Personal pi setup \u2014 non-anny extensions",
   "private": true,
   "dependencies": {
     "yaml": "^2.8.0"
@@ -10,7 +10,19 @@
     "extensions": [
       "./extensions/fork-tab.ts",
       "./extensions/inline-skills.ts",
-      "./extensions/tab-title.ts"
+      "./extensions/tab-title.ts",
+      "./extensions/editor-border/extension.ts"
     ]
+  },
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.0",
+    "@earendil-works/pi-tui": "^0.84.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
   }
 }

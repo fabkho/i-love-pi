@@ -59,7 +59,7 @@ function wrapProvider(base: AutocompleteProvider): AutocompleteProvider {
 
       const match = MIDTEXT_SLASH.exec(before);
       if (!match) return null;
-      const query = match[2];
+      const query = match[2] ?? "";
 
       // Reuse the built-in command list by asking the base provider with a
       // synthetic line-start context, then keep only skill commands.
@@ -73,7 +73,7 @@ function wrapProvider(base: AutocompleteProvider): AutocompleteProvider {
         .map((item) => ({ ...item, label: item.label.replace(/^skill:/, "") }));
       if (items.length === 0) return null;
 
-      return { items, prefix: match[1] }; // prefix = "/query"
+      return { items, prefix: match[1] ?? "" }; // prefix = "/query"
     },
 
     applyCompletion(lines, cursorLine, cursorCol, item: AutocompleteItem, prefix) {
@@ -112,7 +112,8 @@ export default function inlineSkills(pi: ExtensionAPI): void {
     const match = INLINE_SKILL.exec(text);
     if (!match) return;
     const token = match[2];
-    const tokenStart = match.index + match[1].length;
+    if (token === undefined) return;
+    const tokenStart = match.index + (match[1]?.length ?? 0);
     const rest = (text.slice(0, tokenStart) + text.slice(tokenStart + token.length))
       .replace(/\s+/g, " ")
       .trim();

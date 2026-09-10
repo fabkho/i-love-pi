@@ -298,7 +298,7 @@ export default function (pi: ExtensionAPI): void {
             // Fork BEFORE the selected message, matching the integrated
             // /fork command behaviour: the new session includes everything
             // up to (but not including) the chosen message.
-            targetLeafId = chosenMsg.parentId; // null if root message
+            targetLeafId = chosenMsg?.parentId ?? null; // null if root message
           }
         }
         // If the user cancels (selected === undefined), targetLeafId stays
@@ -334,7 +334,7 @@ export default function (pi: ExtensionAPI): void {
       }
 
       const suffix = prompt ? " with prompt" : "";
-      ctx.ui.notify(`Forked → new ${terminal} tab${suffix}`, "success");
+      ctx.ui.notify(`Forked → new ${terminal} tab${suffix}`, "info");
     },
   });
 
@@ -375,7 +375,7 @@ export default function (pi: ExtensionAPI): void {
           const idx = options.indexOf(selected);
           if (idx >= 0) {
             const chosenMsg = userMessages[idx];
-            targetLeafId = chosenMsg.parentId;
+            targetLeafId = chosenMsg?.parentId ?? null;
           }
         }
       }
@@ -399,7 +399,7 @@ export default function (pi: ExtensionAPI): void {
       }
 
       const suffix = prompt ? " with prompt" : "";
-      ctx.ui.notify(`Forked → Ghostty split${suffix}`, "success");
+      ctx.ui.notify(`Forked → Ghostty split${suffix}`, "info");
     },
   });
 }
