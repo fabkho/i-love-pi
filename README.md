@@ -32,7 +32,7 @@ Run `pi` → `/reload`.
 |-----------|-------------|
 | `fork-tab` | Fork session into new tab with a keybinding |
 | `inline-skills` | Type `/` anywhere in a message to insert a skill |
-| `tab-title` | Show the current task and a running/done indicator in the terminal tab title |
+| `tab-title` | Show the current task and a running/done indicator in the terminal tab title, plus a system notification when the run finishes |
 
 #### inline-skills
 
@@ -70,4 +70,5 @@ Notes:
 - ✅/❌ **sticks** after the run settles until you send the next prompt, so you can switch tabs, come back later and still see the outcome.
 - ❌ is shown if any tool call during the run errored; otherwise ✅. "Done" waits for `agent_settled`, so it won't show while an auto-retry, compaction or queued follow-up is pending.
 - The task text is the prompt that started the run (truncated). The tool suffix shows live activity: `reading foo.ts`, `editing bar.ts`, `running: npm test`, `searching "pattern"`, …
+- **System notification**: when the run settles, a native OS notification is sent too — `✅ Task completed: Fix auth bug` (or `❌ Task finished with errors: …`) with the title `pi — my-repo`. Uses `osascript` on macOS, `notify-send` on Linux, a PowerShell balloon on Windows; best-effort and silently skipped if the tool is missing. Disable with `export PI_TAB_TITLE_NOTIFY=0`.
 - **Warp**: Warp overwrites OSC titles with its own auto-title unless `WARP_DISABLE_AUTO_TITLE` is set. The extension sets that env var itself when it detects `TERM_PROGRAM=WarpTerminal`, so no shell rc changes are needed. If your Warp build still overrides it, add `export WARP_DISABLE_AUTO_TITLE=true` to your `~/.zshrc` as a fallback.
