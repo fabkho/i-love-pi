@@ -26,6 +26,13 @@
  * tool currently executing (tool_execution_start/end) so the tab shows live
  * progress, not just a static task name.
  *
+ * System notification:
+ *   When the run settles, a native OS notification is also sent
+ *   ("Task completed" / "Task finished with errors" + the task text) so you
+ *   get pinged even when the terminal is hidden or on another desktop.
+ *   Uses `osascript` on macOS, `notify-send` on Linux and a PowerShell
+ *   balloon on Windows. Set PI_TAB_TITLE_NOTIFY=0 to disable.
+ *
  * Part of the i-love-pi package. No config needed — works out of the box,
  * including in Warp (see below).
  *
@@ -53,6 +60,7 @@ const MAX_TASK_LEN = 42;
 const MAX_TOOL_LEN = 26;
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 120;
+const NOTIFY_ENABLED = !/^(0|false|off|no)$/i.test(process.env.PI_TAB_TITLE_NOTIFY ?? "");
 
 type RunState = "idle" | "running" | "done" | "error";
 
@@ -84,6 +92,55 @@ function describeTool(toolName: string, args: any): string | undefined {
 			// Custom/MCP/subagent tools: fall back to args.description or the tool name.
 			if (args?.description) return truncate(String(args.description), MAX_TOOL_LEN);
 			return toolName.replace(/[_-]+/g, " ");
+	}
+}
+
+/** Escape a string for embedding inside a double-quoted AppleScript literal. */
+function appleScriptQuote(text: string): string {
+	return `"${text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/** Escape a string for embedding inside a single-quoted PowerShell literal. */
+function powershellQuote(text: string): string {
+	return `'${text.replace(/'/g, "''")}'`;
+}
+
+/**
+ * Fire a native OS notification. Best-effort: silently ignores missing
+ * tools (e.g. no notify-send on a headless Linux box) and never throws.
+ */
+async function sendSystemNotification(pi: ExtensionAPI, title: string, body: string): Promise<void> {
+	if (!NOTIFY_ENABLED) return;
+	try {
+		switch (process.platform) {
+			case "darwin":
+				await pi.exec("osascript", [
+					"-e",
+					`display notification ${appleScriptQuote(body)} with title ${appleScriptQuote(title)}`,
+				]);
+				break;
+			case "linux":
+				await pi.exec("notify-send", ["--app-name=pi", title, body]);
+				break;
+			case "win32":
+				await pi.exec("powershell", [
+					"-NoProfile",
+					"-Command",
+					[
+						"Add-Type -AssemblyName System.Windows.Forms;",
+						"$n = New-Object System.Windows.Forms.NotifyIcon;",
+						"$n.Icon = [System.Drawing.SystemIcons]::Information;",
+						"$n.Visible = $true;",
+						`$n.ShowBalloonTip(5000, ${powershellQuote(title)}, ${powershellQuote(body)}, 'Info');`,
+						"Start-Sleep -Seconds 5; $n.Dispose();",
+					].join(" "),
+				]);
+				break;
+			default:
+				break;
+		}
+	} catch {
+		// Notifications are a nicety — never let them break the run.
 	}
 }
 
@@ -170,6 +227,10 @@ export default function (pi: ExtensionAPI) {
 		state = hadError ? "error" : "done";
 		toolSuffix = undefined;
 		render(ctx);
+
+		const cwd = path.basename(process.cwd());
+		const headline = hadError ? "❌ Task finished with errors" : "✅ Task completed";
+		void sendSystemNotification(pi, `pi — ${cwd}`, `${headline}: ${task ?? "Working"}`);
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
