@@ -161,7 +161,9 @@ export default function (pi: ExtensionAPI) {
 	function statusIcon(): string {
 		switch (state) {
 			case "running":
-				return SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length];
+				// Indexed access is only provably in range to a reader, not to the
+				// compiler, and a missing frame should cost a frame rather than throw.
+				return SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] ?? "";
 			case "done":
 				return "✅";
 			case "error":
