@@ -78,7 +78,49 @@ function fakeEditor(): Component {
  */
 const DIM = "\u001b[2m";
 const RESET = "\u001b[0m";
-const editorArgs = [{}, { borderColor: (text: string) => `${DIM}${text}${RESET}` }, {}] as never[];
+/**
+ * Where the kit's coverage label lands when keys are missing, and when clean.
+ *
+ * Real SGR sequences, not readable markers: the border measures a label by
+ * stripping escapes first, and its stripper — like pi's — only knows `[0-9;]*m`.
+ * A marker with letters in it is counted as visible width and the label stops
+ * fitting, which is a fixture bug rather than a border one.
+ */
+const FG_MISSING = "\u001b[38;5;141m";
+const FG_CLEAN = "\u001b[38;5;114m";
+/**
+ * A TUI stand-in. pi-tui's real `Editor` reads the terminal size off it while
+ * rendering, so the fallback path — which builds a real editor — can be
+ * exercised rather than merely asserted on.
+ */
+const TUI_STUB = {
+  terminal: { rows: 24, columns: 120 },
+  requestRender: () => {},
+  setFocus: () => {},
+} as never;
+const editorArgs = [TUI_STUB, { borderColor: (text: string) => `${DIM}${text}${RESET}` }, {}] as never[];
+
+/**
+ * pi's own theme, as `ctx.ui.theme` exposes it — the only theme with `fg` on
+ * it, and therefore the only place a slot's own colour can come from.
+ *
+ * Markers rather than colour codes, so an assertion says which token was asked
+ * for rather than what it currently resolves to. An unknown token throws, as the
+ * real one does.
+ */
+const theme = {
+  fg: (color: string, text: string): string => {
+    const hex: Record<string, string> = {
+      success: FG_CLEAN,
+      syntaxKeyword: FG_MISSING,
+      borderMuted: DIM,
+      accent: "\u001b[38;5;75m",
+    };
+    const ansi = hex[color];
+    if (ansi === undefined) throw new Error(`Unknown theme color: ${color}`);
+    return `${ansi}${text}${RESET}`;
+  },
+};
 
 function harness(status: string | undefined = "🌐 4 missing", missing: number | undefined = 4) {
   const handlers: Record<string, ((event: unknown, ctx: unknown) => unknown)[]> = {};
@@ -88,6 +130,10 @@ function harness(status: string | undefined = "🌐 4 missing", missing: number 
     hasUI: true,
     cwd: "/project",
     ui: {
+      // A live getter, as pi's is: slot colours are read per render.
+      get theme() {
+        return theme;
+      },
       getEditorComponent: () => installed,
       setEditorComponent: (factory: (...args: never[]) => Component) => {
         installed = factory;
@@ -181,8 +227,12 @@ describe("slots", () => {
     await fire("session_start");
 
     const line = renderEditor().at(-1) ?? "";
-    // Ordered by the slots' own order, and separated for reading.
-    expect(line).toContain("⚙ 3 failing · 🌐 4 missing");
+    // Ordered by the slots' own order, separated for reading, and each label in
+    // its own styling: the separator is coloured as chrome, the kit's label as
+    // coverage. So assert the parts and their order, not one contiguous run.
+    expect(line).toContain("⚙ 3 failing");
+    expect(line).toContain(`${FG_MISSING}🌐 4 missing${RESET}`);
+    expect(line.indexOf("⚙ 3 failing")).toBeLessThan(line.indexOf("🌐"));
   });
 
   it("drops the least important slot before the most important one", async () => {
@@ -215,13 +265,55 @@ describe("slots", () => {
 });
 
 describe("the label itself", () => {
-  it("wears the frame's own colour", async () => {
+  it("takes its own colour when the slot names one", async () => {
     const { pi, fire, installEditor, renderEditor } = harness();
     installEditor(fakeEditor);
     extension(pi as never);
     await fire("session_start");
 
-    expect(renderEditor().at(-1)).toContain(`${DIM}🌐 4 missing${RESET}`);
+    // Readable at all, which the frame colour is not — `borderMuted` is a
+    // quiet-rule colour, so a figure drawn in it disappears into the border.
+    expect(renderEditor().at(-1)).toContain(`${FG_MISSING}🌐 4 missing${RESET}`);
+    expect(renderEditor().at(-1)).not.toContain(`${DIM}🌐 4 missing${RESET}`);
+  });
+
+  it("colours itself by what it reports, not once at load", async () => {
+    const { pi, fire, installEditor, renderEditor } = harness();
+    installEditor(fakeEditor);
+    extension(pi as never);
+    await fire("session_start");
+    expect(renderEditor().at(-1)).toContain(FG_MISSING);
+
+    // The kit finishes a run and coverage is clean: green, same as the cost.
+    statusRef.current = "🌐 ✓";
+    missingRef.current = 0;
+    expect(renderEditor().at(-1)).toContain(`${FG_CLEAN}🌐 ✓${RESET}`);
+  });
+
+  it("leaves a slot that names no colour in the frame's own colour", async () => {
+    setBorderSlot({ id: "build", labels: ["⚙ 3 failing"], order: 10 });
+    statusRef.current = undefined;
+    missingRef.current = undefined;
+    const { pi, fire, installEditor, renderEditor } = harness();
+    installEditor(fakeEditor);
+    extension(pi as never);
+    await fire("session_start");
+
+    expect(renderEditor().at(-1)).toContain(`${DIM}⚙ 3 failing${RESET}`);
+  });
+
+  it("falls back to the frame colour when a slot names an unknown token", async () => {
+    // A mistyped token must not take the editor down with it: this runs inside
+    // render, once a frame.
+    setBorderSlot({ id: "typo", labels: ["oops"], order: 10, color: "chartreuse" as never });
+    statusRef.current = undefined;
+    missingRef.current = undefined;
+    const { pi, fire, installEditor, renderEditor } = harness();
+    installEditor(fakeEditor);
+    extension(pi as never);
+    await fire("session_start");
+
+    expect(renderEditor().at(-1)).toContain(`${DIM}oops${RESET}`);
   });
 
   it("shortens rather than vanishing when the border is narrow", async () => {
@@ -349,4 +441,55 @@ describe("wrapping the editor", () => {
     expect(renderEditor().at(-1)).toBe(BOTTOM);
     vi.unstubAllEnvs();
   });
+
+describe("when no extension supplies an editor", () => {
+  /*
+   * pi's default editor is only reachable through `setEditorComponent`, so a
+   * solo install has nothing to wrap unless this extension supplies one. These
+   * pin that it does, that it waits for another extension first, and that the
+   * wait can be turned off.
+   */
+  const QUICK = "0";
+
+  it("supplies pi's own editor, labelled, once the wait runs out", async () => {
+    vi.stubEnv("PI_BORDER_WRAP_TIMEOUT_MS", QUICK);
+    const { pi, fire, isInstalled, editorInstance } = harness();
+    extension(pi as never);
+
+    await fire("session_start");
+    await vi.waitFor(() => expect(isInstalled()).toBe(true), { timeout: 2_000 });
+
+    // pi's own class, not a stand-in, because the host wires a custom editor
+    // itself: this ends up being the default editor with labels in its border.
+    expect(editorInstance()?.constructor.name).toBe("CustomEditor");
+    expect((editorInstance()?.render(120) ?? []).join("\n")).toContain("🌐 4 missing");
+    vi.unstubAllEnvs();
+  });
+
+  it("still prefers an editor another extension installed", async () => {
+    vi.stubEnv("PI_BORDER_WRAP_TIMEOUT_MS", QUICK);
+    const { pi, fire, installEditor, editorInstance } = harness();
+    extension(pi as never);
+    await fire("session_start");
+
+    // Arrives inside the wait window, so it wins and gets wrapped rather than
+    // being replaced by a default frame.
+    installEditor(fakeEditor);
+    await fire("turn_start");
+
+    expect(editorInstance()).toBeInstanceOf(FakeEditor);
+    vi.unstubAllEnvs();
+  });
+
+  it("leaves the editor alone when asked not to supply one", async () => {
+    vi.stubEnv("PI_BORDER", "off");
+    const { pi, fire, isInstalled } = harness();
+    extension(pi as never);
+    await fire("session_start");
+    await fire("turn_start");
+
+    expect(isInstalled()).toBe(false);
+    vi.unstubAllEnvs();
+  });
+});
 });

@@ -24,6 +24,37 @@ Add to `~/.pi/settings.json`:
 
 Run `pi` → `/reload`.
 
+### Sharing this setup with someone else
+
+A pi theme is a colour-token JSON file and nothing more — it cannot carry code,
+so the slot mechanism cannot live *in* a theme. It lives in this package, which
+is the thing to hand over. Installing it brings the theme and the extensions
+that draw the chrome; `setup/apply.sh` places the one config a package cannot
+carry.
+
+```bash
+./setup/apply.sh --write-settings
+```
+
+That copies `zentui.json` and sets `theme` and the package entries in
+`settings.json`, backing up anything it replaces. Drop `--write-settings` to
+copy the config and only print what is left.
+
+Then restart pi, or `/reload` a running session.
+
+Three dependencies worth knowing before you promise someone this look:
+
+| Dependency | Why |
+|---|---|
+| **A dark terminal** | The palette is built for one, and `toolPendingBg`/`toolSuccessBg` are `""` — tool rows defer to *your* background by design. On a white terminal body text falls to ~1.5:1 contrast. |
+| **Nothing else, for the labels** | `editor-border` labels whatever editor is installed, and when none is it installs pi's own `CustomEditor` and labels that — so a solo install works. pi-zentui is what gives you the frame `zentui.json` describes (cost and context readout, framed messages), not what makes labels appear. |
+| **The kit, for the kit label** | The `🌐` slot is empty unless `@the-i18n-kit/pi` is publishing coverage. Every other slot works regardless. |
+
+`setup/zentui.json` is a config, not a theme: pi-zentui reads it from
+`~/.pi/agent/zentui.json` with no package or project discovery, which is why it
+has to be copied rather than shipped. `apply.sh` backs up an existing one and
+leaves an identical one alone, so it is safe to re-run.
+
 ## What's Inside
 
 ### Extensions
@@ -34,6 +65,14 @@ Run `pi` → `/reload`.
 | `inline-skills` | Type `/` anywhere in a message to insert a skill |
 | `tab-title` | Show the current task and a running/done indicator in the terminal tab title, plus a system notification when the run finishes |
 | `editor-border` | Labels in the editor border, from any extension that claims a slot |
+| `quiet-tools` | Collapse shell calls to one line, expand them on demand |
+
+### Themes
+
+| Theme | Description |
+|-------|-------------|
+| `tokyo-midnight-fk` | Tokyo Night palette on a deep blue-black base, tuned for a quiet transcript |
+
 
 #### inline-skills
 
@@ -111,11 +150,97 @@ border carries on with whatever else is registered.
 |---|---|
 | `PI_BORDER=off` | No labels |
 | `PI_BORDER_PLACEMENT=top` | Label the top edge instead of the bottom |
+| `PI_BORDER_EDITOR=off` | Never supply an editor; label only one another extension installed |
+| `PI_BORDER_WRAP_TIMEOUT_MS=n` | How long to wait for another extension's editor (default 3000) |
 
 **How it works, and how it fails.** pi's editor chrome belongs to whichever
 extension owns the editor component, and its metadata set is closed. So this
 wraps the installed editor and places labels into the rule of a border
-afterwards, consuming spare width so the frame keeps its width and styling. It
-is surgery on someone else's output, and is written to fail by doing nothing: no
-editor, no border, an unfamiliar frame or a line too narrow, and the editor
-renders exactly as it would have.
+afterwards, consuming spare width so the frame keeps its width and styling.
+
+Two things make that work in more than one host:
+
+- **A cornerless frame is a frame.** pi's own editor draws its border as two bare
+  rules with no `╭╰` glyphs, so a corner-only test finds no border there at all.
+  `isBottomBorder`/`isTopBorder` accept a line that is nothing but rule too;
+  hyphens are excluded, because a line of `-----` is far more likely to be
+  something you typed than a border.
+- **Runs are found in the visible line, not the raw one.** pi builds its border
+  as `borderColor("─").repeat(width)`, so the raw text is that character
+  wrapped in its own escape pair over and over. A raw scan sees runs of length
+  one and places nothing. Runs are measured with escapes removed and mapped back
+  to raw offsets, and the styling that wrapped the consumed span is put back —
+  otherwise part of the rule would drop to the default colour.
+
+**No editor to wrap?** Then it supplies one: pi's own `CustomEditor`, installed
+through `setEditorComponent`, so it is the default editor with labels rather
+than a stand-in. pi wires a custom editor itself — `onSubmit`, `onChange`, the
+text, border colour, padding, autocomplete, and every app action — so nothing
+is lost. This is also why a solo install works with no other extension:
+another extension's editor is preferred and wrapped, and one is only supplied
+when the wait for it runs out.
+
+It is surgery on someone else's output, and is written to fail by doing nothing:
+no border, an unfamiliar frame or a line too narrow, and the editor renders
+exactly as it would have.
+
+#### quiet-tools
+
+A run of shell commands is mostly output you scroll past. The command is the
+interesting part; its `stdout` usually isn't. pi previews a few lines of every
+command by default, which turns a long run into a wall of text.
+
+This collapses each `bash` row to a single status line and hands the output
+back to pi's own renderer the moment you ask for it:
+
+```
+$ npm test
+✓ 12.4s · 38 lines · (ctrl+o to expand)
+```
+
+`Ctrl+O` is pi's existing tool-expansion toggle, so it expands every tool row in
+the transcript at once — the hint follows your keybinding config rather than
+hardcoding `ctrl+o`. Failed commands keep their first line in the collapsed view,
+because that is the part you actually want:
+
+```
+$ npm run build
+✗ TS2345: Argument of type 'string' is not assignable · 3.1s
+```
+
+Running commands show a live timer; output with fewer lines than the hint
+threshold stays a clean `✓ 0.1s · 2 lines`.
+
+**How it works.** This overrides the built-in `bash` tool by name — the
+documented way to replace a built-in. Each slot is inherited separately, so
+execution delegates to pi's own `createBashToolDefinition(cwd)` and only the
+`renderResult` slot is replaced. Shell resolution, output truncation, session
+env vars and the `BashToolDetails` result shape are pi's, unchanged; `$ command`
+still renders as the built-in header; and the description, schema and prompt
+metadata the model sees are taken verbatim from pi's definition.
+
+| Variable | Effect |
+|---|---|
+| `PI_QUIET_TOOLS=off` | Don't override anything; `bash` renders as stock |
+| `PI_QUIET_TOOLS_HINT_LINES=n` | Output lines before the expand hint appears (default 4) |
+
+Only `bash` is touched. `read`, `grep`, `find` and `ls` keep pi's rendering,
+since their output is usually the point of the call.
+
+#### tokyo-midnight-fk
+
+The palette is Tokyo Night on a deep blue-black base, tuned for a transcript
+that stays quiet:
+
+- **Tool boxes are transparent.** `toolPendingBg` and `toolSuccessBg` are empty
+(terminal default), so tool rows read as text instead of nested dark panels.
+Only a failing tool gets a faint red tint (`toolErrorBg`), so failures still
+catch the eye in a long run.
+- **Output recedes, results don't.** `toolOutput` is a step dimmer than body
+text, so a command's output sits behind the command itself.
+- **A thinking gradient** runs `thinkingOff → thinkingMinimal → … → thinkingMax`
+from the border colour up through blue, cyan and magenta, so the editor border
+tells you the thinking level at a glance.
+
+Registered as a package theme (`pi.themes` in `package.json`), so it travels
+with the repo. Editing the active theme file hot-reloads it.

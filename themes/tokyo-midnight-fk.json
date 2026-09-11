@@ -1,0 +1,98 @@
+{
+  "$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
+  "name": "tokyo-midnight-fk",
+  "vars": {
+    "bg": "#0b1020",
+    "bg-raise": "#151d36",
+    "bg-hi": "#1f2a4a",
+    "fg": "#c8d3f5",
+    "fg-dim": "#a3aed2",
+    "gutter": "#2e3a5c",
+    "comment": "#6b7aa8",
+    "muted-ink": "#5b6b9c",
+    "blue0": "#3d59a1",
+    "blue": "#7aa2f7",
+    "blue-bright": "#8bb4ff",
+    "cyan": "#7dcfff",
+    "teal": "#2ac3de",
+    "magenta": "#bb9af7",
+    "purple": "#9d7cd8",
+    "magenta2": "#ff007c",
+    "orange": "#ff9e64",
+    "yellow": "#e0af68",
+    "green": "#9ece6a",
+    "red": "#f7768e",
+    "red-deep": "#db4b4b"
+  },
+  "colors": {
+    "accent": "blue",
+    "border": "blue0",
+    "borderAccent": "cyan",
+    "borderMuted": "gutter",
+    "success": "green",
+    "error": "red",
+    "warning": "orange",
+    "muted": "comment",
+    "dim": "muted-ink",
+    "text": "fg",
+    "thinkingText": "fg-dim",
+
+    "selectedBg": "bg-hi",
+    "scrollbarThumb": "gutter",
+    "searchMatchBg": "blue0",
+    "searchMatchText": "fg",
+
+    "userMessageBg": "bg-raise",
+    "userMessageText": "fg",
+
+    "customMessageBg": "#141b30",
+    "customMessageText": "fg",
+    "customMessageLabel": "cyan",
+
+    "toolPendingBg": "",
+    "toolSuccessBg": "",
+    "toolErrorBg": "#2b1a26",
+    "toolTitle": "fg",
+    "toolOutput": "fg-dim",
+
+    "mdHeading": "cyan",
+    "mdLink": "blue-bright",
+    "mdLinkUrl": "comment",
+    "mdCode": "teal",
+    "mdCodeBlock": "fg",
+    "mdCodeBlockBorder": "gutter",
+    "mdQuote": "fg-dim",
+    "mdQuoteBorder": "purple",
+    "mdHr": "gutter",
+    "mdListBullet": "blue",
+
+    "toolDiffAdded": "green",
+    "toolDiffRemoved": "red",
+    "toolDiffContext": "comment",
+
+    "syntaxComment": "comment",
+    "syntaxKeyword": "magenta",
+    "syntaxFunction": "blue",
+    "syntaxVariable": "fg",
+    "syntaxString": "green",
+    "syntaxNumber": "orange",
+    "syntaxType": "teal",
+    "syntaxOperator": "cyan",
+    "syntaxPunctuation": "muted-ink",
+
+    "thinkingOff": "gutter",
+    "thinkingMinimal": "comment",
+    "thinkingLow": "blue0",
+    "thinkingMedium": "blue",
+    "thinkingHigh": "cyan",
+    "thinkingXhigh": "magenta",
+    "thinkingMax": "magenta2",
+
+    "bashMode": "yellow"
+  },
+  "export": {
+    "pageBg": "#0b1020",
+    "cardBg": "#151d36",
+    "infoBg": "#1f2a4a"
+  }
+}

@@ -11,7 +11,11 @@
       "./extensions/fork-tab.ts",
       "./extensions/inline-skills.ts",
       "./extensions/tab-title.ts",
-      "./extensions/editor-border/extension.ts"
+      "./extensions/editor-border/extension.ts",
+      "./extensions/quiet-tools.ts"
+    ],
+    "themes": [
+      "./themes"
     ]
   },
   "type": "module",

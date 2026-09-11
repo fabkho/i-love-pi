@@ -18,6 +18,8 @@
  * the slot knows which parts of its own label matter most.
  */
 
+import type { ThemeColor } from "@earendil-works/pi-coding-agent";
+
 const REGISTRY = Symbol.for("i-love-pi.editor-border.slots");
 
 export interface BorderSlot {
@@ -33,6 +35,20 @@ export interface BorderSlot {
   labels: string[] | (() => string[]);
   /** Lower sorts closer to the start of the border. Defaults to 100. */
   order?: number;
+  /**
+   * Theme colour token for this slot's label, e.g. `"success"`.
+   *
+   * Without it a label is drawn in the frame's own colour (`borderMuted`),
+   * which is what keeps decorative chrome from competing with the things you
+   * read. Set it when the label carries a figure worth noticing: `borderMuted`
+   * is a quiet-rule colour, deliberately close to the background, and a value
+   * rendered in it cannot be read.
+   *
+   * A function is re-read on every render, so a slot can colour itself by the
+   * state it is reporting — harmless in one state, alarming in another. An
+   * unknown token falls back to the frame colour rather than throwing.
+   */
+  color?: ThemeColor | (() => ThemeColor | undefined);
 }
 
 interface Registry {
@@ -67,6 +83,17 @@ function labelsOf(slot: BorderSlot): string[] {
   return labels.filter((label) => label.length > 0);
 }
 
+/** A slot's colour token, resolving a function form; undefined means inherit. */
+function colorOf(slot: BorderSlot): ThemeColor | undefined {
+  return typeof slot.color === "function" ? slot.color() : slot.color;
+}
+
+/**
+ * Styles one label of one slot. Applied before labels are joined, because the
+ * joined line is what gets measured and the slot is what knows its colour.
+ */
+export type LabelStyler = (label: string, color: ThemeColor | undefined) => string;
+
 /**
  * What to try putting in the border, from the most complete to the least.
  *
@@ -74,8 +101,15 @@ function labelsOf(slot: BorderSlot): string[] {
  * once the shortest forms still do not fit, the last slot is dropped and the
  * ladder is walked again. So a crowded border loses detail before it loses a
  * slot, and loses the least important slot before the most important one.
+ *
+ * Styling happens here rather than after joining so each slot keeps its own
+ * colour, and so `injectIntoBorder` still measures only visible width.
  */
-export function renderCandidates(slots: BorderSlot[], separator = " · "): string[] {
+export function renderCandidates(
+  slots: BorderSlot[],
+  separator = " · ",
+  styleLabel: LabelStyler = (label) => label,
+): string[] {
   const present = slots.map((slot) => ({ slot, labels: labelsOf(slot) })).filter((entry) => entry.labels.length > 0);
   if (present.length === 0) return [];
 
@@ -85,7 +119,9 @@ export function renderCandidates(slots: BorderSlot[], separator = " · "): strin
     const depth = Math.max(...kept.map((entry) => entry.labels.length));
     for (let step = 0; step < depth; step += 1) {
       const line = kept
-        .map((entry) => entry.labels[Math.min(step, entry.labels.length - 1)])
+        .map((entry) =>
+          styleLabel(entry.labels[Math.min(step, entry.labels.length - 1)] ?? "", colorOf(entry.slot)),
+        )
         .join(separator);
       if (!candidates.includes(line)) candidates.push(line);
     }

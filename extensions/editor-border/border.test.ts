@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { injectIntoBorder, isBottomBorder, labelWidth } from "./border.ts";
+import { injectIntoBorder, isBottomBorder, isTopBorder, labelWidth } from "./border.ts";
 
 /** Bottom edge: branch on the left, project on the right, rule between. */
 const BOTTOM =
@@ -96,5 +96,35 @@ describe("injectIntoBorder", () => {
     const line = injectIntoBorder(heavy, "🌐 ✓");
     expect(line).toContain("🌐 ✓");
     expect(width(line)).toBe(width(heavy));
+  });
+});
+
+/**
+ * pi's own editor draws its frame as `borderColor("─").repeat(width)`, so the
+ * raw line is that character wrapped in its own escape pair again and again.
+ * Scanning raw text finds runs of length one and places nothing; scanning
+ * visible text and mapping back is what makes a solo install label its border.
+ */
+const PER_CHARACTER_RULE = "\u001b[38;5;240m─\u001b[0m".repeat(60);
+
+describe("a frame drawn one character at a time", () => {
+  it("is recognised as an edge even with no corners", () => {
+    expect(isBottomBorder(PER_CHARACTER_RULE)).toBe(true);
+    expect(isTopBorder(PER_CHARACTER_RULE)).toBe(true);
+  });
+
+  it("finds the run through the escapes, and keeps the width", () => {
+    const line = injectIntoBorder(PER_CHARACTER_RULE, "🌐 4 missing");
+    expect(line).toContain("🌐 4 missing");
+    expect(width(line)).toBe(width(PER_CHARACTER_RULE));
+  });
+
+  it("puts back rule in the frame's colour, not bare text", () => {
+    const line = injectIntoBorder(PER_CHARACTER_RULE, "🌐 4 missing");
+    expect(line).toContain("\u001b[38;5;240m");
+  });
+
+  it("still refuses a line of hyphens, which is content more often than frame", () => {
+    expect(isBottomBorder("-".repeat(60))).toBe(false);
   });
 });

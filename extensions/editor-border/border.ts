@@ -35,18 +35,52 @@ interface Run {
   character: string;
 }
 
-/** Every unbroken run of one rule character in the line. */
-function findRuns(line: string): Run[] {
-  const runs: Run[] = [];
+/**
+ * The line split into visible characters, each with the offset it starts at in
+ * the raw string.
+ *
+ * Rules are not plain text. pi's own editor builds its border as
+ * `borderColor("─").repeat(width)`, so the raw line is the same character
+ * wrapped in its own escape pair over and over — `ESC─ESC ESC─ESC …`. Scanning
+ * the raw string therefore finds a run of length one, not a border, and nothing
+ * is ever placed. Runs are found in the visible text and mapped back.
+ */
+interface VisibleLine {
+  /** The line with escape sequences removed. */
+  text: string;
+  /** `rawAt[i]` is where visible character `i` starts in the raw line. */
+  rawAt: number[];
+}
+
+function visibleLine(line: string): VisibleLine {
+  let text = "";
+  const rawAt: number[] = [];
   let index = 0;
   while (index < line.length) {
-    const character = line[index]!;
+    const escape = line[index] === "\u001b" ? ANSI_AT_START.exec(line.slice(index)) : null;
+    if (escape) {
+      index += escape[0].length;
+      continue;
+    }
+    text += line[index];
+    rawAt.push(index);
+    index += 1;
+  }
+  return { text, rawAt };
+}
+
+/** Every unbroken run of one rule character in the visible line. */
+function findRuns(text: string): Run[] {
+  const runs: Run[] = [];
+  let index = 0;
+  while (index < text.length) {
+    const character = text[index]!;
     if (!RULE_CHARACTERS.includes(character as (typeof RULE_CHARACTERS)[number])) {
       index += 1;
       continue;
     }
     let end = index;
-    while (end < line.length && line[end] === character) end += 1;
+    while (end < text.length && text[end] === character) end += 1;
     runs.push({ index, length: end - index, character });
     index = end;
   }
@@ -55,6 +89,9 @@ function findRuns(line: string): Run[] {
 
 /** Escape sequences occupy no cells, so they are removed before measuring. */
 const ANSI = /\u001b\[[0-9;]*m/gu;
+
+/** The same, anchored, for walking a line one character at a time. */
+const ANSI_AT_START = /^\u001b\[[0-9;]*m/u;
 
 export function stripAnsi(text: string): string {
   return text.replace(ANSI, "");
@@ -91,7 +128,8 @@ export function injectIntoBorder(line: string, label: string, options: InjectOpt
   // Rule on both sides: a label that ends flush against the next one reads as
   // part of it, rather than as its own thing sitting in the border.
   const needed = labelWidth(label) + PADDING * 2 + minLeadingRule + 1;
-  const candidates = findRuns(line).filter((run) => run.length >= needed);
+  const { text, rawAt } = visibleLine(line);
+  const candidates = findRuns(text).filter((run) => run.length >= needed);
   if (candidates.length === 0) return line;
 
   const target =
@@ -102,20 +140,62 @@ export function injectIntoBorder(line: string, label: string, options: InjectOpt
   const rule = target.character;
   const consumed = labelWidth(label) + PADDING * 2 + 1;
   const leading = target.length - consumed;
-  const replacement =
-    `${rule.repeat(leading)}${" ".repeat(PADDING)}${label}${" ".repeat(PADDING)}${rule}`;
 
-  return line.slice(0, target.index) + replacement + line.slice(target.index + target.length);
+  // Map the whole run back to raw offsets, keeping the styling that wrapped it.
+  // The rule is drawn one styled character at a time, so emitting plain text
+  // here would drop the frame's colour across the span the label eats — and the
+  // span is only `consumed` wide, with `leading` rule put back in front of it.
+  const startRaw = rawAt[target.index]!;
+  const endRaw = rawAt[target.index + target.length - 1]! + 1;
+  const before = line.slice(0, startRaw);
+  const after = line.slice(endRaw);
+  const styleOpen = /(\u001b\[[0-9;]*m)$/u.exec(before)?.[1] ?? "";
+  const styleClose = /^(\u001b\[[0-9;]*m)/u.exec(after)?.[1] ?? "";
+
+  const replacement =
+    styleOpen +
+    rule.repeat(leading) +
+    " ".repeat(PADDING) +
+    label +
+    " ".repeat(PADDING) +
+    rule +
+    styleClose;
+
+  return before + replacement + after;
+}
+
+/**
+ * Whether a line is nothing but horizontal rule — a frame edge with no corners.
+ *
+ * pi's own editor frames the input with two bare rules and no corner glyphs, so
+ * a corner-only test sees no frame there at all and nothing is ever placed. A
+ * cornerless edge cannot say whether it is the top or the bottom one; which rule
+ * gets the label is decided by the caller, which searches from the edge it wants.
+ *
+ * Hyphen is deliberately not a rule here, although `RULE_CHARACTERS` counts it:
+ * a line of `-----` in a frame this runs against is far more likely to be content
+ * someone typed than a border, and a label dropped into their text is worse than
+ * a label not placed.
+ */
+function isCornerlessRule(line: string): boolean {
+  const text = stripAnsi(line).trim();
+  if (text.length === 0) return false;
+  for (const character of text) {
+    if (character !== "─" && character !== "━" && character !== "═") return false;
+  }
+  return true;
 }
 
 /** Whether a line looks like the bottom edge of a frame. */
 export function isBottomBorder(line: string): boolean {
-  return /[╰└][^\n]*[╯┘]\s*$/u.test(stripAnsi(line));
+  const text = stripAnsi(line);
+  return /[╰└][^\n]*[╯┘]\s*$/u.test(text) || isCornerlessRule(text);
 }
 
 /** Whether a line looks like the top edge of a frame. */
 export function isTopBorder(line: string): boolean {
-  return /[╭┌][^\n]*[╮┐]\s*$/u.test(stripAnsi(line));
+  const text = stripAnsi(line);
+  return /[╭┌][^\n]*[╮┐]\s*$/u.test(text) || isCornerlessRule(text);
 }
 
 /**

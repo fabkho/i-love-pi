@@ -18,10 +18,10 @@
  * editor renders exactly as it would have.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import type { EditorComponent } from "@earendil-works/pi-tui";
 import { injectFirstThatFits, isBottomBorder, isTopBorder } from "./border.ts";
-import { getBorderSlots, renderCandidates } from "./slots.ts";
+import { getBorderSlots, type LabelStyler, renderCandidates } from "./slots.ts";
 import { claimPersistentSurface, registerI18nSlot } from "./sources/i18n-kit.ts";
 
 /**
@@ -30,6 +30,9 @@ import { claimPersistentSurface, registerI18nSlot } from "./sources/i18n-kit.ts"
  * follows the contract wherever it goes.
  */
 type EditorFactory = NonNullable<ReturnType<NonNullable<ExtensionContext["ui"]["getEditorComponent"]>>>;
+
+/** The editor theme pi hands an editor factory — the frame's colour lives here. */
+type EditorTheme = Parameters<EditorFactory>[1];
 
 /** Which edge of the frame carries the labels. */
 type Placement = "top" | "bottom";
@@ -45,7 +48,62 @@ const PATCHED = Symbol.for("i-love-pi.editor-border.patched");
 
 /** How long to keep looking for an editor to wrap, and how often. */
 const WRAP_RETRY_MS = 50;
-const WRAP_TIMEOUT_MS = 3_000;
+const DEFAULT_WRAP_TIMEOUT_MS = 3_000;
+
+/**
+ * How long to wait for another extension's editor before supplying one.
+ *
+ * Long enough to outlast a slow package load, short enough that a solo install
+ * is not sitting on an unlabelled border. Read per session so it can be tuned
+ * without a reload, and so tests need not spend the real three seconds.
+ */
+function wrapTimeoutMs(): number {
+  const raw = Number.parseInt(process.env.PI_BORDER_WRAP_TIMEOUT_MS ?? "", 10);
+  return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_WRAP_TIMEOUT_MS;
+}
+
+/** Between two slots' labels in the border. */
+const SEPARATOR = " · ";
+
+/**
+ * How a slot's label gets its colour.
+ *
+ * A slot that names no colour is drawn in the frame's own colour, so
+ * decorative chrome keeps looking like chrome. A slot that names one is drawn
+ * in that colour — because the frame colour is not a readable-text colour: pi
+ * defines `getEditorTheme().borderColor` as `fg("borderMuted")`, which themes
+ * set a few percent off the background. Right for a rule, unreadable for a
+ * figure.
+ *
+ * The frame colour comes from the editor's own theme, which is all that theme
+ * carries. The slot colour comes from pi's full theme (`ctx.ui.theme`, a live
+ * getter), the only one with `fg` on it.
+ *
+ * An unknown token falls back to the frame colour rather than throwing: this
+ * runs inside `editor.render`, once per frame, and one mistyped token must not
+ * take the editor down with it.
+ */
+/**
+ * The frame's own colour, as the editor component carries it.
+ *
+ * The editor theme is a narrower thing than pi's: it has `borderColor` and the
+ * select-list colours, and no `fg`. Unstyled if the host offers nothing, because
+ * a label is still better than a crash.
+ */
+function chromeOf(editorTheme: EditorTheme): (text: string) => string {
+  return typeof editorTheme?.borderColor === "function" ? editorTheme.borderColor : (text: string) => text;
+}
+function stylerFor(chrome: (text: string) => string, currentTheme: () => Theme | undefined): LabelStyler {
+  return (label, color) => {
+    if (color === undefined) return chrome(label);
+    try {
+      // Called as a method: Theme.fg reads its colour map off `this`.
+      return currentTheme()?.fg(color, label) ?? chrome(label);
+    } catch {
+      return chrome(label);
+    }
+  };
+}
 
 /**
  * Make a component's border carry the registered labels.
@@ -57,10 +115,11 @@ const WRAP_TIMEOUT_MS = 3_000;
  * original, and the editor stops responding. One object, one state, one patched
  * method.
  */
-function labelBorder(editor: EditorComponent, style: (text: string) => string): EditorComponent {
+function labelBorder(editor: EditorComponent, style: LabelStyler): EditorComponent {
   const target = editor as EditorComponent & { [PATCHED]?: boolean };
   if (target[PATCHED]) return editor;
   target[PATCHED] = true;
+
 
   const original = editor.render.bind(editor);
   const wanted = placement();
@@ -68,7 +127,9 @@ function labelBorder(editor: EditorComponent, style: (text: string) => string): 
 
   editor.render = (width: number): string[] => {
     const lines = original(width);
-    const candidates = renderCandidates(getBorderSlots()).map(style);
+    // Labels are styled individually so each slot keeps its own colour, which
+    // means the separator has to be coloured deliberately to stay chrome.
+    const candidates = renderCandidates(getBorderSlots(), style(SEPARATOR, undefined), style);
     if (candidates.length === 0) return lines;
 
     // Searched from the bottom for a bottom edge, from the top for a top one,
@@ -99,21 +160,44 @@ export default function editorBorder(pi: ExtensionAPI): void {
 
   const ensureWrapped = (ctx: ExtensionContext): boolean => {
     const current: EditorFactory | undefined = ctx.ui.getEditorComponent?.();
-    // Nothing to wrap: pi's own editor is not exposed as a factory, and taking
-    // it over would mean reimplementing someone else's frame to add a label.
     if (!current) return false;
     if ((current as { [WRAPPED]?: boolean })[WRAPPED]) return true;
 
-    const wrapped: EditorFactory = (tui, theme, keybindings) =>
-      // Styled with the frame's own colour: a label in chrome that introduces a
-      // colour of its own stops looking like part of the chrome. Unstyled if the
-      // host offers no border colour — a label is still better than a crash.
+    const wrapped: EditorFactory = (tui, editorTheme, keybindings) =>
       labelBorder(
-        current(tui, theme, keybindings),
-        typeof theme?.borderColor === "function" ? theme.borderColor : (text: string) => text,
+        current(tui, editorTheme, keybindings),
+        stylerFor(chromeOf(editorTheme), () => ctx.ui.theme),
       );
     (wrapped as { [WRAPPED]?: boolean })[WRAPPED] = true;
     ctx.ui.setEditorComponent?.(wrapped);
+    claimPersistentSurface();
+    return true;
+  };
+
+  /*
+   * Nobody else supplied an editor, so supply one and label it.
+   *
+   * pi's own editor is only reachable through `setEditorComponent`, and its
+   * default is not exposed for wrapping — which is why this extension had
+   * nothing to do without a second extension present. The way in is to install
+   * the same class pi installs, `CustomEditor`.
+   *
+   * It is the same class, not a substitute: pi wires a custom editor itself in
+   * `setCustomEditorComponent` — `onSubmit` and `onChange` from the default
+   * editor, the text, border colour, padding, autocomplete, and for anything
+   * exposing `actionHandlers` (which `CustomEditor` does) the escape, ctrl-D and
+   * paste-image handlers, extension shortcuts and every app action. So the
+   * result is the default editor, with labels in its border.
+   */
+  const installOwnEditor = (ctx: ExtensionContext): boolean => {
+    if (process.env.PI_BORDER_EDITOR === "off") return false;
+    // Someone arrived while we were waiting; their editor wins.
+    if (ctx.ui.getEditorComponent?.()) return ensureWrapped(ctx);
+
+    const factory: EditorFactory = (tui, editorTheme, keybindings) =>
+      labelBorder(new CustomEditor(tui, editorTheme, keybindings), stylerFor(chromeOf(editorTheme), () => ctx.ui.theme));
+    (factory as { [WRAPPED]?: boolean })[WRAPPED] = true;
+    ctx.ui.setEditorComponent?.(factory);
     claimPersistentSurface();
     return true;
   };
@@ -127,19 +211,32 @@ export default function editorBorder(pi: ExtensionAPI): void {
      * The editor this wraps is installed by another extension, in its own
      * session_start handler, and handlers run in load order — so whether one
      * exists yet depends on which package the settings happen to list first.
-     * Rather than depend on that, keep looking for a short while.
+     *
+     * So wait rather than install: another extension's editor is the one the
+     * user asked for, and taking the editor over before it has had its turn
+     * would replace a deliberately chosen frame with a default one. Only when
+     * the wait runs out does this supply pi's own editor, so a solo install
+     * still gets labels.
      */
-    const deadline = Date.now() + WRAP_TIMEOUT_MS;
+    const deadline = Date.now() + wrapTimeoutMs();
     const timer = setInterval(() => {
-      if (ensureWrapped(ctx) || Date.now() > deadline) clearInterval(timer);
+      if (ensureWrapped(ctx)) {
+        clearInterval(timer);
+        return;
+      }
+      if (Date.now() <= deadline) return;
+      clearInterval(timer);
+      installOwnEditor(ctx);
     }, WRAP_RETRY_MS);
     timer.unref?.();
   });
 
   // An editor installed later still gets wrapped: extensions re-install theirs
-  // when their own settings change.
+  // when their own settings change, and pi drops a custom editor on session
+  // reset. Wrapping first keeps a chosen editor; installing only happens when
+  // there is nothing left to wrap.
   pi.on("turn_start", (_event, ctx: ExtensionContext) => {
     if (!ctx.hasUI || process.env.PI_BORDER === "off") return;
-    ensureWrapped(ctx);
+    if (!ensureWrapped(ctx)) installOwnEditor(ctx);
   });
 }
