@@ -63,7 +63,7 @@ leaves an identical one alone, so it is safe to re-run.
 |-----------|-------------|
 | `fork-tab` | Fork session into new tab with a keybinding |
 | `inline-skills` | Type `/` anywhere in a message to insert a skill |
-| `tab-title` | Show the current task and a running/done indicator in the terminal tab title, plus a system notification when the run finishes |
+| `tab-title` | Name the terminal tab after the session's first prompt (≤5 words) and show a running / ✅ / ❓ / ❌ indicator, plus a system notification when the run finishes |
 | `editor-border` | Labels in the editor border, from any extension that claims a slot |
 | `quiet-tools` | Collapse shell calls to one line, expand them on demand |
 
@@ -94,23 +94,33 @@ Notes:
 
 #### tab-title
 
-Puts the agent's current task and a running/done indicator in the terminal tab title, so you can see what pi is doing — and whether it's finished — from the tab bar without focusing the tab. Works in Warp, Ghostty, iTerm2, WezTerm, kitty and any other terminal that honours OSC title escapes.
+Names the terminal tab after the session and shows a running/outcome indicator, so you can see what a tab is about — and whether the agent is finished — from the tab bar without focusing it. Works in Warp, Ghostty, iTerm2, WezTerm, kitty and any other terminal that honours OSC title escapes.
 
 | State | Tab title |
 |---|---|
 | Idle (fresh session) | `π - session - my-repo` |
 | Running | `⠋ Fix auth bug - my-repo` (animated spinner) |
 | Running + tool | `⠙ Fix auth bug — editing auth.ts - my-repo` |
-| Done, no errors | `✅ Fix auth bug - my-repo` |
-| Done, a tool errored | `❌ Fix auth bug - my-repo` |
+| Waiting on a confirm/select prompt | `❓ Fix auth bug — needs input - my-repo` |
+| Done, completed | `✅ Fix auth bug - my-repo` |
+| Done, agent asked you something | `❓ Fix auth bug - my-repo` |
+| Done, error / aborted | `❌ Fix auth bug - my-repo` |
 
-Notes:
+**Tab name**
 
-- The spinner animates the whole time the agent is busy (including while thinking between tool calls). Moving title = still working; static ✅/❌ = finished.
-- ✅/❌ **sticks** after the run settles until you send the next prompt, so you can switch tabs, come back later and still see the outcome.
-- ❌ is shown if any tool call during the run errored; otherwise ✅. "Done" waits for `agent_settled`, so it won't show while an auto-retry, compaction or queued follow-up is pending.
-- The task text is the prompt that started the run (truncated). The tool suffix shows live activity: `reading foo.ts`, `editing bar.ts`, `running: npm test`, `searching "pattern"`, …
-- **System notification**: when the run settles, a native OS notification is sent too — `✅ Task completed: Fix auth bug` (or `❌ Task finished with errors: …`) with the title `pi — my-repo`. Uses `osascript` on macOS, `notify-send` on Linux, a PowerShell balloon on Windows; best-effort and silently skipped if the tool is missing. Disable with `export PI_TAB_TITLE_NOTIFY=0`.
+- Set **once per session** from the first prompt and never changed by follow-up prompts, so the tab stays recognisable. Max 5 words.
+- A heuristic name (first words of the prompt, minus `@file` / `/skill` tokens) appears instantly; in the background the current model is asked for a tighter ≤5-word summary (e.g. `Add community entity actions`) which replaces it. `export PI_TAB_TITLE_LLM=0` to skip the model call.
+- Resumed / forked sessions are named from their first user message.
+- `/tab-title Some name` overrides it manually; `/tab-title` with no args clears it so the next prompt names the tab again.
+
+**Outcome**
+
+- The spinner animates the whole time the agent is busy (including while thinking between tool calls). Moving title = still working; static ✅/❓/❌ = finished.
+- The outcome **sticks** after the run settles until you send the next prompt, so you can switch tabs, come back later and still see it.
+- Tool errors during a run do **not** make it ❌ — the agent normally recovers from a failed grep/edit. Instead: ❌ if the final assistant message ended with an error or was aborted (Ctrl+C, provider error); ❓ if the agent stopped on a question to you; ✅ otherwise. "Done" waits for `agent_settled`, so it won't show while an auto-retry, compaction or queued follow-up is pending.
+- The tool suffix shows live activity: `reading foo.ts`, `editing bar.ts`, `running: npm test`, `searching "pattern"`, …
+- **System notification**: when the run settles, a native OS notification is sent too — `✅ Task completed: Fix auth bug` / `❓ Needs your input: …` / `❌ Task failed or aborted: …` with the title `pi — my-repo`. Uses `osascript` on macOS, `notify-send` on Linux, a PowerShell balloon on Windows; best-effort and silently skipped if the tool is missing. Disable with `export PI_TAB_TITLE_NOTIFY=0`.
+- `export PI_TAB_TITLE_DEBUG=1` logs naming decisions to stderr.
 - **Warp**: Warp overwrites OSC titles with its own auto-title unless `WARP_DISABLE_AUTO_TITLE` is set. The extension sets that env var itself when it detects `TERM_PROGRAM=WarpTerminal`, so no shell rc changes are needed. If your Warp build still overrides it, add `export WARP_DISABLE_AUTO_TITLE=true` to your `~/.zshrc` as a fallback.
 #### editor-border
 
