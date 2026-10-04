@@ -22,15 +22,21 @@
  * replace a built-in. Execution is not reimplemented: it delegates to
  * `createBashToolDefinition(cwd)`, so shell resolution, truncation, session env
  * vars and the `BashToolDetails` result shape stay exactly as pi produced them.
- * Only the `renderResult` slot is replaced; each other slot (`renderCall`,
- * `description`, schema, prompt metadata) is taken verbatim from pi's
- * definition, so the tool the model sees is unchanged and `$ command` still
- * renders like the built-in header.
+ * Only the render slots are replaced; `description`, schema and prompt metadata
+ * are taken verbatim from pi's definition, so the tool the model sees is
+ * unchanged. `renderCall` is pi's own `$ command` header unless a registered
+ * formatter claims the command (see below).
  *
  * Relies on pi's built-in tool definitions being importable (tested against
  * pi 0.84.x). If a pi update removes `createBashToolDefinition`, this extension
  * fails at load and pi reports it — remove it from the extensions list until
  * updated.
+ *
+ * Other extensions can summarise specific commands (e.g. orca-coordinator turns
+ * `orca orchestration ask --from … --question "…" 2>&1 | tail` into
+ * `⧉ orca ask <question> [a · b · c]`). They publish a `BashCallFormatter` into a
+ * process-wide registry (`Symbol.for("pi.bash-call-formatters")`) instead of
+ * owning `bash` themselves; it is read at render time, so load order is irrelevant.
  *
  * Environment:
  *   PI_QUIET_TOOLS=off        don't override anything; `bash` renders as stock
@@ -43,7 +49,7 @@ import {
 	keyHint,
 	type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 
 type BashTool = ReturnType<typeof createBashToolDefinition>;
 type RenderResult = NonNullable<BashTool["renderResult"]>;
@@ -51,6 +57,64 @@ type BashResult = Parameters<RenderResult>[0];
 type RenderOptions = Parameters<RenderResult>[1];
 type Theme = Parameters<RenderResult>[2];
 type RenderContext = Parameters<RenderResult>[3];
+
+type FormatterStyle = "title" | "accent" | "muted" | "dim" | "success" | "error" | "warning" | "output";
+type FormatterLine = { text: string; style?: FormatterStyle }[];
+
+/** Contract for command summaries published by other extensions (see header). */
+export type BashCallFormatter = {
+	id: string;
+	/** Lines to show instead of `$ command` (header first), or null to keep the stock header. */
+	formatCall(command: string, expanded: boolean): FormatterLine[] | null;
+	/** One status segment for a finished, collapsed row, or null for the generic `✓`. */
+	formatResult?(
+		command: string,
+		output: string,
+		state: { isError: boolean },
+	): { text: string; style: FormatterStyle } | null;
+	/** Label for a still-running row (default "running"). */
+	pendingLabel?(command: string): string | null;
+};
+
+const BASH_CALL_FORMATTERS = Symbol.for("pi.bash-call-formatters");
+
+/** The first registered formatter that claims `command`, with its call lines. */
+function claimCommand(command: unknown, expanded: boolean): { formatter: BashCallFormatter; lines: FormatterLine[] } | null {
+	if (typeof command !== "string") return null;
+	const registry = (globalThis as Record<symbol, Map<string, BashCallFormatter> | undefined>)[BASH_CALL_FORMATTERS];
+	for (const formatter of registry?.values() ?? []) {
+		try {
+			const lines = formatter.formatCall(command, expanded);
+			if (lines) return { formatter, lines };
+		} catch {
+			// A broken formatter must never break the transcript; fall through to stock.
+		}
+	}
+	return null;
+}
+
+function styled(theme: Theme, text: string, style: FormatterStyle | undefined): string {
+	switch (style) {
+		case "title":
+			return theme.fg("toolTitle", theme.bold(text));
+		case "output":
+			return theme.fg("toolOutput", text);
+		case undefined:
+			return text;
+		default:
+			return theme.fg(style, text);
+	}
+}
+
+/** Collapsed: every line clipped to the width (one row per line). Expanded: wrapped text. */
+function formattedCallComponent(lines: FormatterLine[], expanded: boolean, theme: Theme) {
+	const rendered = lines.map((line) => line.map((segment) => styled(theme, segment.text, segment.style)).join(""));
+	if (expanded) return new Text(rendered.join("\n"), 0, 0);
+	return {
+		render: (width: number) => rendered.map((line) => truncateToWidth(line, width, "…")),
+		invalidate: () => {},
+	};
+}
 
 const TICK_MS = 1000;
 const MAX_ERROR_CHARS = 96;
@@ -120,9 +184,23 @@ function renderQuietResult(
 	const lines = countLines(output);
 	const separator = theme.fg("dim", " · ");
 	const parts: string[] = [];
+	const command = (context.args as { command?: unknown } | undefined)?.command;
+	const claim = claimCommand(command, false);
+	let summary: { text: string; style: FormatterStyle } | null = null;
+	if (claim && !options.isPartial) {
+		try {
+			summary = claim.formatter.formatResult?.(command as string, output, { isError: context.isError }) ?? null;
+		} catch {
+			summary = null;
+		}
+	}
 
 	if (options.isPartial) {
-		parts.push(theme.fg("muted", elapsed === undefined ? "running" : `running ${elapsed}`));
+		const label = (claim && claim.formatter.pendingLabel?.(command as string)) || "running";
+		parts.push(theme.fg("muted", elapsed === undefined ? label : `${label} ${elapsed}`));
+	} else if (summary) {
+		parts.push(styled(theme, summary.text, summary.style));
+		if (elapsed !== undefined) parts.push(theme.fg("dim", elapsed));
 	} else if (context.isError) {
 		const detail = firstLine(output);
 		parts.push(theme.fg("error", detail === "" ? "✗ failed" : `✗ ${detail}`));
@@ -166,6 +244,20 @@ export default function quietTools(pi: ExtensionAPI): void {
 		...bashFor(process.cwd()),
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			return bashFor(ctx.cwd).execute(toolCallId, params, signal, onUpdate, ctx);
+		},
+		renderCall(args, theme, context) {
+			const claim = claimCommand(args?.command, context.expanded);
+			const builtin = bashFor(context.cwd);
+			if (!claim || !builtin.renderCall) {
+				return builtin.renderCall!(args, theme, context);
+			}
+			// Same start-time bookkeeping as pi's header, which this replaces for the row.
+			const state = context.state;
+			if (context.executionStarted && state.startedAt === undefined) {
+				state.startedAt = Date.now();
+				state.endedAt = undefined;
+			}
+			return formattedCallComponent(claim.lines, context.expanded, theme);
 		},
 		renderResult(result, options, theme, context) {
 			return renderQuietResult(result, options, theme, context, bashFor(context.cwd));

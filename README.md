@@ -196,6 +196,8 @@ exactly as it would have.
 
 #### quiet-tools
 
+Other extensions can replace the `$ command` header and the collapsed status line for commands they recognise. They do this by registering a `BashCallFormatter` in `globalThis[Symbol.for("pi.bash-call-formatters")]` (a `Map` keyed by id). For example, pi-orca-coordinator renders `orca orchestration ask …` as `⧉ orca ask [a · b · c] <question>`. Formatters are looked up at render time; a formatter that throws falls back to stock rendering.
+
 A run of shell commands is mostly output you scroll past. The command is the
 interesting part; its `stdout` usually isn't. pi previews a few lines of every
 command by default, which turns a long run into a wall of text.
