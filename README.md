@@ -42,13 +42,12 @@ copy the config and only print what is left.
 
 Then restart pi, or `/reload` a running session.
 
-Three dependencies worth knowing before you promise someone this look:
+Two dependencies worth knowing before you promise someone this look:
 
 | Dependency | Why |
 |---|---|
 | **A dark terminal** | The palette is built for one, and `toolPendingBg`/`toolSuccessBg` are `""` — tool rows defer to *your* background by design. On a white terminal body text falls to ~1.5:1 contrast. |
-| **Nothing else, for the labels** | `editor-border` labels whatever editor is installed, and when none is it installs pi's own `CustomEditor` and labels that — so a solo install works. pi-zentui is what gives you the frame `zentui.json` describes (cost and context readout, framed messages), not what makes labels appear. |
-| **The kit, for the kit label** | The `🌐` slot is empty unless `@the-i18n-kit/pi` is publishing coverage. Every other slot works regardless. |
+| **pi-zentui, for the frame** | `zentui.json` describes pi-zentui's frame: border, cost and context readout, framed user messages. Without pi-zentui, pi draws its own editor. |
 
 `setup/zentui.json` is a config, not a theme: pi-zentui reads it from
 `~/.pi/agent/zentui.json` with no package or project discovery, which is why it
@@ -64,7 +63,6 @@ leaves an identical one alone, so it is safe to re-run.
 | `fork-tab` | Fork session into new tab with a keybinding |
 | `inline-skills` | Type `/` anywhere in a message to insert a skill |
 | `tab-title` | Name the terminal tab after the session's first prompt (≤5 words) and show a running / ✅ / ❓ / ❌ indicator, plus a system notification when the run finishes |
-| `editor-border` | Labels in the editor border, from any extension that claims a slot |
 | `quiet-tools` | Collapse shell calls to one line, expand them on demand |
 
 ### Themes
@@ -122,78 +120,6 @@ Names the terminal tab after the session and shows a running/outcome indicator, 
 - **System notification**: when the run settles, a native OS notification is sent too — `✅ Task completed: Fix auth bug` / `❓ Needs your input: …` / `❌ Task failed or aborted: …` with the title `pi — my-repo`. Uses `osascript` on macOS, `notify-send` on Linux, a PowerShell balloon on Windows; best-effort and silently skipped if the tool is missing. Disable with `export PI_TAB_TITLE_NOTIFY=0`.
 - `export PI_TAB_TITLE_DEBUG=1` logs naming decisions to stderr.
 - **Warp**: Warp overwrites OSC titles with its own auto-title unless `WARP_DISABLE_AUTO_TITLE` is set. The extension sets that env var itself when it detects `TERM_PROGRAM=WarpTerminal`, so no shell rc changes are needed. If your Warp build still overrides it, add `export WARP_DISABLE_AUTO_TITLE=true` to your `~/.zshrc` as a fallback.
-#### editor-border
-
-The editor border already carries what you glance at — branch, model, context —
-and has spare width between them. This makes that width available: claim a slot,
-give it a short label, and it appears in the frame you already read.
-
-```
-╰─ main * ──────────── ⚙ 3 failing · 🌐 4 missing ─ my-project ─╯
-```
-
-Labels are given longest-first, and the border shows the longest that fits:
-
-```ts
-import { setBorderSlot } from "./extensions/editor-border/slots.ts";
-
-setBorderSlot({
-  id: "build",
-  order: 10,
-  labels: ["⚙ 3 failing", "⚙ 3"],
-});
-```
-
-A crowded border loses detail before it loses a slot, and loses the
-highest-`order` slot before the lowest. Labels may also be a function, which is
-re-read on every render.
-
-Because pi gives each extension its own module registry, the slots live in the
-global symbol registry (`i-love-pi.editor-border.slots`) — so an extension that
-has never heard of this one can still claim a slot by writing to it directly.
-
-Sources under `sources/` adapt something into a slot; `i18n-kit` reads the
-coverage published by `@the-i18n-kit/pi` and offers it. Delete a source and the
-border carries on with whatever else is registered.
-
-| Variable | Effect |
-|---|---|
-| `PI_BORDER=off` | No labels |
-| `PI_BORDER_PLACEMENT=top` | Label the top edge instead of the bottom |
-| `PI_BORDER_EDITOR=off` | Never supply an editor; label only one another extension installed |
-| `PI_BORDER_WRAP_TIMEOUT_MS=n` | How long to wait for another extension's editor (default 3000) |
-
-**How it works, and how it fails.** pi's editor chrome belongs to whichever
-extension owns the editor component, and its metadata set is closed. So this
-wraps the installed editor and places labels into the rule of a border
-afterwards, consuming spare width so the frame keeps its width and styling.
-
-Two things make that work in more than one host:
-
-- **A cornerless frame is a frame.** pi's own editor draws its border as two bare
-  rules with no `╭╰` glyphs, so a corner-only test finds no border there at all.
-  `isBottomBorder`/`isTopBorder` accept a line that is nothing but rule too;
-  hyphens are excluded, because a line of `-----` is far more likely to be
-  something you typed than a border.
-- **Runs are found in the visible line, not the raw one.** pi builds its border
-  as `borderColor("─").repeat(width)`, so the raw text is that character
-  wrapped in its own escape pair over and over. A raw scan sees runs of length
-  one and places nothing. Runs are measured with escapes removed and mapped back
-  to raw offsets, and the styling that wrapped the consumed span is put back —
-  otherwise part of the rule would drop to the default colour.
-
-**No editor to wrap?** Then it supplies one: pi's own `CustomEditor`, installed
-through `setEditorComponent`, so it is the default editor with labels rather
-than a stand-in. pi wires a custom editor itself — `onSubmit`, `onChange`, the
-text, border colour, padding, autocomplete, and every app action — so nothing
-is lost. This is also why a solo install works with no other extension:
-another extension's editor is preferred and wrapped, and one is only supplied
-when the wait for it runs out.
-
-It is surgery on someone else's output, and is written to fail by doing nothing:
-no border, an unfamiliar frame or a line too narrow, and the editor renders
-exactly as it would have.
-
 #### quiet-tools
 
 Other extensions can replace the `$ command` header and the collapsed status line for commands they recognise. They do this by registering a `BashCallFormatter` in `globalThis[Symbol.for("pi.bash-call-formatters")]` (a `Map` keyed by id). For example, pi-orca-coordinator renders `orca orchestration ask …` as `⧉ orca ask [a · b · c] <question>`. Formatters are looked up at render time; a formatter that throws falls back to stock rendering.

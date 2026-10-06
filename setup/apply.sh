@@ -131,14 +131,8 @@ What each piece needs:
     so tool rows read as text rather than as panels. On a light terminal body
     text drops to roughly 1.5:1 contrast.
 
-  * The labels in the border come from this repo's editor-border extension and
-    need no other extension: with none installed it supplies pi's own editor and
-    labels that. Install pi-zentui as well for the frame this config describes —
-    border, cost and context readout, framed user messages — which is what
-    zentui.json above is for.
-
-  * The kit label (🌐) only appears when @the-i18n-kit/pi is publishing coverage.
-    Every other slot works regardless, and an empty slot is simply absent.
+  * Install pi-zentui for the frame this config describes: border, cost and
+    context readout, framed user messages. That is what zentui.json above is for.
 
 If you already have a theme named tokyo-midnight-fk, expect a "[Theme conflicts]"
 notice and rename one of them: `name` inside the theme JSON must be unique.
