@@ -15,6 +15,7 @@
  *   - Running + tool activity:    "⠋ <name> — <tool action> - <cwd>"
  *       e.g. "⠋ Fix auth bug — editing auth.ts - bookings-api"
  *   - Waiting on a UI prompt:     "❓ <name> — needs input - <cwd>"
+ *   - Idle, subagents running:    "⠋ <name> — waiting on 2 subagents - <cwd>"
  *   - Done, completed normally:   "✅ <name> - <cwd>"
  *   - Done, agent asked you sth:  "❓ <name> - <cwd>"
  *   - Done, error / aborted:      "❌ <name> - <cwd>"
@@ -43,6 +44,13 @@
  *        (provider error, Ctrl+C / abort, ...)
  *     ❓ the agent stopped and its last line is a question to you
  *     ✅ everything else
+ *
+ * Background subagents:
+ *   When the agent starts async pi-subagents runs and goes idle to wait for
+ *   them, the run is not finished yet: the spinner keeps going (no ✅, no
+ *   notification) until every run reported back. Tracked via the
+ *   `subagent:async-started` / `subagent:async-complete` events that
+ *   pi-subagents emits on `pi.events`.
  *
  * System notification:
  *   When the run settles, a native OS notification is also sent
@@ -81,12 +89,17 @@ const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", 
 const SPINNER_INTERVAL_MS = 120;
 const LLM_NAME_TIMEOUT_MS = 20_000;
 const LLM_NAME_MAX_TOKENS = 1024;
+// After the last subagent reports back, pi-subagents normally wakes the agent
+// for a follow-up turn. Wait this long for that turn before showing the outcome.
+const SUBAGENT_WAKE_GRACE_MS = 2_000;
+const SUBAGENT_STARTED_EVENT = "subagent:async-started";
+const SUBAGENT_COMPLETE_EVENT = "subagent:async-complete";
 const NOTIFY_ENABLED = !/^(0|false|off|no)$/i.test(process.env.PI_TAB_TITLE_NOTIFY ?? "");
 const LLM_NAMING_ENABLED = !/^(0|false|off|no)$/i.test(process.env.PI_TAB_TITLE_LLM ?? "");
 
 const ICON = { done: "✅", question: "❓", error: "❌" } as const;
 type Outcome = keyof typeof ICON;
-type RunState = "idle" | "running" | "waiting" | Outcome;
+type RunState = "idle" | "running" | "waiting" | "subagents" | Outcome;
 
 function truncate(text: string, max: number): string {
 	const clean = text.replace(/\s+/g, " ").trim();
@@ -271,6 +284,8 @@ export default function (pi: ExtensionAPI) {
 	let spinnerTimer: ReturnType<typeof setInterval> | null = null;
 	let spinnerFrame = 0;
 	let generation = 0; // bumped on session change so stale async naming results are dropped
+	const pendingSubagents = new Set<string>(); // async subagent run ids that have not reported back
+	let settleTimer: ReturnType<typeof setTimeout> | null = null;
 	// Most recent ctx seen from any event. Async work (spinner ticks, the
 	// background LLM naming) must render through this, never a captured ctx:
 	// a ctx goes stale after session replacement/reload and then throws.
@@ -285,6 +300,7 @@ export default function (pi: ExtensionAPI) {
 	function statusIcon(): string {
 		switch (state) {
 			case "running":
+			case "subagents":
 				// Indexed access is only provably in range to a reader, not to the
 				// compiler, and a missing frame should cost a frame rather than throw.
 				return SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] ?? "";
@@ -310,6 +326,10 @@ export default function (pi: ExtensionAPI) {
 			let suffix = "";
 			if (state === "running" && toolSuffix) suffix = ` — ${toolSuffix}`;
 			if (state === "waiting") suffix = " — needs input";
+			if (state === "subagents") {
+				const n = pendingSubagents.size;
+				suffix = ` — waiting on ${n} subagent${n === 1 ? "" : "s"}`;
+			}
 			title = `${statusIcon()} ${name}${suffix} - ${cwd}`;
 		}
 		try {
@@ -371,8 +391,34 @@ export default function (pi: ExtensionAPI) {
 		return undefined;
 	}
 
+	function clearSettleTimer() {
+		if (settleTimer) {
+			clearTimeout(settleTimer);
+			settleTimer = null;
+		}
+	}
+
+	/** Freeze on the outcome indicator and send the OS notification. */
+	function finish(ctx: ExtensionContext | undefined = latestCtx) {
+		clearSettleTimer();
+		stopSpinner();
+		state = outcome;
+		toolSuffix = undefined;
+		render(ctx);
+
+		const cwd = path.basename(process.cwd());
+		const headline = {
+			done: `${ICON.done} Task completed`,
+			question: `${ICON.question} Needs your input`,
+			error: `${ICON.error} Task failed or aborted`,
+		}[outcome];
+		void sendSystemNotification(pi, `pi — ${cwd}`, `${headline}: ${name ?? "Working"}`);
+	}
+
 	function resetForSession(ctx: ExtensionContext) {
 		generation++;
+		clearSettleTimer();
+		pendingSubagents.clear();
 		stopSpinner();
 		state = "idle";
 		name = undefined;
@@ -386,10 +432,12 @@ export default function (pi: ExtensionAPI) {
 
 	// A new run starts: name the tab if it has no name yet, then start animating.
 	pi.on("before_agent_start", async (event, ctx) => {
+		clearSettleTimer();
 		state = "running";
 		toolSuffix = undefined;
 		outcome = "done";
-		nameFromPrompt(ctx, event.prompt);
+		// Runs woken by a subagent result are custom messages without a prompt.
+		if (typeof event.prompt === "string") nameFromPrompt(ctx, event.prompt);
 		startSpinner(ctx);
 		render(ctx);
 	});
@@ -442,19 +490,38 @@ export default function (pi: ExtensionAPI) {
 	// Fully settled (no retry/compaction/follow-up left): freeze on the
 	// outcome indicator so it's visible from the tab bar at a glance. Stays
 	// until the next prompt is sent.
+	// If async subagents are still running, the agent is only idling until
+	// they report back: keep spinning instead.
 	pi.on("agent_settled", async (_event, ctx) => {
-		stopSpinner();
-		state = outcome;
-		toolSuffix = undefined;
-		render(ctx);
+		if (pendingSubagents.size > 0 && outcome !== "error") {
+			state = "subagents";
+			toolSuffix = undefined;
+			if (!spinnerTimer) startSpinner(ctx);
+			render(ctx);
+			return;
+		}
+		finish(ctx);
+	});
 
-		const cwd = path.basename(process.cwd());
-		const headline = {
-			done: `${ICON.done} Task completed`,
-			question: `${ICON.question} Needs your input`,
-			error: `${ICON.error} Task failed or aborted`,
-		}[outcome];
-		void sendSystemNotification(pi, `pi — ${cwd}`, `${headline}: ${name ?? "Working"}`);
+	pi.events.on(SUBAGENT_STARTED_EVENT, (data: any) => {
+		if (typeof data?.id !== "string" || !data.id) return;
+		pendingSubagents.add(data.id);
+		if (state === "subagents") render();
+	});
+
+	pi.events.on(SUBAGENT_COMPLETE_EVENT, (data: any) => {
+		const id = typeof data?.runId === "string" ? data.runId : data?.id;
+		if (typeof id !== "string" || !pendingSubagents.delete(id)) return;
+		if (state !== "subagents") return;
+		render();
+		// Last one back: give pi-subagents a moment to wake the agent with the
+		// results (before_agent_start cancels this); otherwise show the outcome.
+		if (pendingSubagents.size === 0 && !settleTimer) {
+			settleTimer = setTimeout(() => {
+				settleTimer = null;
+				if (state === "subagents") finish();
+			}, SUBAGENT_WAKE_GRACE_MS);
+		}
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -463,6 +530,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		generation++; // drop any in-flight LLM naming result
+		clearSettleTimer();
 		stopSpinner();
 		try {
 			ctx.ui.setTitle(baseTitle());
