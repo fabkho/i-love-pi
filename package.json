@@ -12,7 +12,8 @@
       "./extensions/inline-skills.ts",
       "./extensions/tab-title.ts",
       "./extensions/editor-border/extension.ts",
-      "./extensions/quiet-tools.ts"
+      "./extensions/quiet-tools.ts",
+      "./extensions/aic-meter.ts"
     ],
     "themes": [
       "./themes"
