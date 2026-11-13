@@ -27,11 +27,17 @@
           "contextGauge": false,
           "showSessionName": true,
           "showTimer": true,
-          "showCost": true,
+          "showCost": false,
           "showGit": true,
           "contextThresholds": {
             "warning": 70,
             "error": 90
+          },
+          "variables": {
+            "aic": "i-love-pi:aic"
+          },
+          "formats": {
+            "topRight": "$aic$join_sep$model$join_sep$thinking$join_sep$context"
           }
         }
       }
