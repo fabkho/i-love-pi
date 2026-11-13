@@ -47,7 +47,7 @@ Two dependencies worth knowing before you promise someone this look:
 | Dependency | Why |
 |---|---|
 | **A dark terminal** | The palette is built for one, and `toolPendingBg`/`toolSuccessBg` are `""` — tool rows defer to *your* background by design. On a white terminal body text falls to ~1.5:1 contrast. |
-| **pi-zentui, for the frame** | `zentui.json` describes pi-zentui's frame: border, cost and context readout, framed user messages. Without pi-zentui, pi draws its own editor. |
+| **pi-zentui, for the frame** | `zentui.json` describes pi-zentui's frame: border, cost and context readout, framed user messages, and the working line with its live token rate. Without pi-zentui, pi draws its own editor. |
 
 `setup/zentui.json` is a config, not a theme: pi-zentui reads it from
 `~/.pi/agent/zentui.json` with no package or project discovery, which is why it
